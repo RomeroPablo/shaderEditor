@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -23,6 +24,7 @@ struct State{
 
     VkPhysicalDevice physicalDevice;
     VkDevice logicalDevice;
+    size_t queueFamilyIndex;
 
     VkShaderModule shader;
 
@@ -108,7 +110,17 @@ void State::initDevice(){
         printMemoryProps(memProps);
         std::cout << "\t\t"; printBreak(37);
     }
+
     physicalDevice = devices[0];
+
+    uint32_t queueFamilyCount;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, NULL);
+    VkQueueFamilyProperties queueProps[queueFamilyCount];
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueProps);
+    for(const auto& q : queueProps){
+        printQueueFamilyProperties(q);
+        std::cout << "\t\t"; printBreak(37);
+    }
 
     VkDeviceQueueCreateInfo queueCI = {
     /*
@@ -119,12 +131,16 @@ void State::initDevice(){
     uint32_t                    queueCount;
     const float*                pQueuePriorities;
     */
+        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        NULL,
+        0,
+        0,
+        1,
+        0
     };
+    std::vector<VkDeviceCreateInfo> queueCreateInfos;
     VkDeviceCreateInfo deviceCI = {
         /*
-    VkStructureType                    sType;
-    const void*                        pNext;
-    VkDeviceCreateFlags                flags;
     uint32_t                           queueCreateInfoCount;
     const VkDeviceQueueCreateInfo*     pQueueCreateInfos;
     // enabledLayerCount is legacy and should not be used
@@ -138,10 +154,13 @@ void State::initDevice(){
         VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         NULL,
         0,
-        0,
+        1,
         &queueCI,
         0,      //legacy
         NULL,   //legacy
+        0,
+        NULL,
+        NULL
     };
 
     vkCreateDevice(physicalDevice, &deviceCI, NULL, &logicalDevice);

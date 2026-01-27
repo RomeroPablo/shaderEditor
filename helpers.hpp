@@ -345,3 +345,35 @@ void inline printMemoryProps(const VkPhysicalDeviceMemoryProperties& p){
                   << " flags=" << heap_flags_string(h.flags) << std::endl;
     }
 };
+
+void inline printQueueFamilyProperties(const VkQueueFamilyProperties& p){
+    auto flags_string = [](VkQueueFlags flags){
+        std::string out;
+        auto add = [&out](const char* name){
+            if(!out.empty()) out += " | ";
+            out += name;
+        };
+        if(flags & VK_QUEUE_GRAPHICS_BIT) add("GRAPHICS");
+        if(flags & VK_QUEUE_COMPUTE_BIT) add("COMPUTE");
+        if(flags & VK_QUEUE_TRANSFER_BIT) add("TRANSFER");
+        if(flags & VK_QUEUE_SPARSE_BINDING_BIT) add("SPARSE_BINDING");
+        if(flags & VK_QUEUE_PROTECTED_BIT) add("PROTECTED");
+        if(flags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) add("VIDEO_DECODE_KHR");
+        if(flags & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) add("VIDEO_ENCODE_KHR");
+        if(flags & VK_QUEUE_OPTICAL_FLOW_BIT_NV) add("OPTICAL_FLOW_NV");
+        if(flags & VK_QUEUE_DATA_GRAPH_BIT_ARM) add("DATA_GRAPH_ARM");
+        if(out.empty()) out = "0";
+        return out;
+    };
+    auto print_u32 = [](const char* name, uint32_t v){
+        std::cout << "\t\t" << name << " : " << v << std::endl;
+    };
+    auto print_extent3 = [](const char* name, const VkExtent3D& v){
+        std::cout << "\t\t" << name << " : [" << v.width << ", " << v.height << ", " << v.depth << "]" << std::endl;
+    };
+
+    std::cout << "\t\tqueueFlags : " << flags_string(p.queueFlags) << std::endl;
+    print_u32("queueCount", p.queueCount);
+    print_u32("timestampValidBits", p.timestampValidBits);
+    print_extent3("minImageTransferGranularity", p.minImageTransferGranularity);
+}
