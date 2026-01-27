@@ -21,11 +21,15 @@ struct State{
     std::vector<const char*> layers{};
     std::vector<const char*> extensions{};
 
+    VkPhysicalDevice physicalDevice;
+    VkDevice logicalDevice;
+
     VkShaderModule shader;
 
     void setExtensions();
     void setLayers();
     void initDevice();
+    void initInstance();
     void initVulkan();
 
     void initSDL();
@@ -44,6 +48,7 @@ void State::setExtensions(){
         std::cout << '\t' << e.extensionName << std::endl;
     }
 }
+
 void State::setLayers(){
     uint32_t count;
     vkEnumerateInstanceLayerProperties(&count, NULL);
@@ -55,22 +60,7 @@ void State::setLayers(){
     }
 }
 
-void State::initDevice(){
-    uint32_t count;
-    vkEnumeratePhysicalDevices(instance, &count, NULL);
-    VkPhysicalDevice devices[count];
-    vkEnumeratePhysicalDevices(instance, &count, devices);
-    std::cout << "[+] Available Devices" << std::endl;
-    for(const auto& d : devices){
-        VkPhysicalDeviceProperties props;
-        vkGetPhysicalDeviceProperties(d, &props);
-        printDeviceProps(props);
-    }
-}
-
-void State::initVulkan(){
-    setExtensions();
-    setLayers();
+void State::initInstance(){
     VkApplicationInfo appInfo = {
         VK_STRUCTURE_TYPE_APPLICATION_INFO,
         NULL,
@@ -92,6 +82,75 @@ void State::initVulkan(){
         extensions.data(),
     };
     vkCreateInstance(&createInfo, NULL, &instance);
+};
+
+void State::initDevice(){
+    uint32_t count;
+    vkEnumeratePhysicalDevices(instance, &count, NULL);
+    VkPhysicalDevice devices[count];
+    vkEnumeratePhysicalDevices(instance, &count, devices);
+    std::cout << "[+] Available Devices" << std::endl;
+    for(const auto& d : devices){
+        VkPhysicalDeviceProperties props;
+        VkPhysicalDeviceFeatures feats;
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceProperties(d, &props);
+        vkGetPhysicalDeviceFeatures(d, &feats);
+        vkGetPhysicalDeviceMemoryProperties(d, &memProps);
+        printDeviceProps(props);
+        std::cout << "\t\t"; printBreak(37);
+        printSparseProps(props.sparseProperties);
+        std::cout << "\t\t"; printBreak(37);
+        printPhysicalLimits(props.limits);
+        std::cout << "\t\t"; printBreak(37);
+        printPhysicalFeatures(feats);
+        std::cout << "\t\t"; printBreak(37);
+        printMemoryProps(memProps);
+        std::cout << "\t\t"; printBreak(37);
+    }
+    physicalDevice = devices[0];
+
+    VkDeviceQueueCreateInfo queueCI = {
+    /*
+    VkStructureType             sType;
+    const void*                 pNext;
+    VkDeviceQueueCreateFlags    flags;
+    uint32_t                    queueFamilyIndex;
+    uint32_t                    queueCount;
+    const float*                pQueuePriorities;
+    */
+    };
+    VkDeviceCreateInfo deviceCI = {
+        /*
+    VkStructureType                    sType;
+    const void*                        pNext;
+    VkDeviceCreateFlags                flags;
+    uint32_t                           queueCreateInfoCount;
+    const VkDeviceQueueCreateInfo*     pQueueCreateInfos;
+    // enabledLayerCount is legacy and should not be used
+    uint32_t                           enabledLayerCount;
+    // ppEnabledLayerNames is legacy and should not be used
+    const char* const*                 ppEnabledLayerNames;
+    uint32_t                           enabledExtensionCount;
+    const char* const*                 ppEnabledExtensionNames;
+    const VkPhysicalDeviceFeatures*    pEnabledFeatures;
+    */
+        VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        NULL,
+        0,
+        0,
+        &queueCI,
+        0,      //legacy
+        NULL,   //legacy
+    };
+
+    vkCreateDevice(physicalDevice, &deviceCI, NULL, &logicalDevice);
+}
+
+void State::initVulkan(){
+    setExtensions();
+    setLayers();
+    initInstance();
     initDevice();
 }
 
