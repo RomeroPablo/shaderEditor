@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <numeric>
 #include <sstream>
 #include <vector>
 
@@ -18,21 +19,33 @@ struct State{
     const char* shaderPath = "../shader.frag";
     SDL_Window* window;
     VkInstance instance;
+    uint32_t width = 640;
+    uint32_t height = 480;
 
     std::vector<const char*> layers{};
     std::vector<const char*> extensions{};
 
     VkPhysicalDevice physicalDevice;
     VkDevice logicalDevice;
-    size_t queueFamilyIndex;
+    uint32_t queueFamilyIndex;
+    uint32_t queueCount;
+    uint32_t graphicsQueueIndex;
+    VkQueue graphicsQueue;
+
+    VkSwapchainKHR swapchain;
+    VkRenderPass renderPass;
+    std::vector<VkImage> images;
+    std::vector<VkImageView> imageViews;
+    VkFramebuffer framebuffer;
 
     VkShaderModule shader;
 
+    void initVulkan();
     void setExtensions();
     void setLayers();
-    void initDevice();
     void initInstance();
-    void initVulkan();
+    void initDevice();
+    void initFramebuffer();
 
     void initSDL();
     void renderLoop();
@@ -122,35 +135,21 @@ void State::initDevice(){
         std::cout << "\t\t"; printBreak(37);
     }
 
+    queueFamilyIndex = 0;
+    queueCount = 1;
+    graphicsQueueIndex = 0;
+
     VkDeviceQueueCreateInfo queueCI = {
-    /*
-    VkStructureType             sType;
-    const void*                 pNext;
-    VkDeviceQueueCreateFlags    flags;
-    uint32_t                    queueFamilyIndex;
-    uint32_t                    queueCount;
-    const float*                pQueuePriorities;
-    */
         VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         NULL,
         0,
-        0,
-        1,
+        queueFamilyIndex,
+        queueCount,
         0
     };
-    std::vector<VkDeviceCreateInfo> queueCreateInfos;
+
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos = {queueCI};
     VkDeviceCreateInfo deviceCI = {
-        /*
-    uint32_t                           queueCreateInfoCount;
-    const VkDeviceQueueCreateInfo*     pQueueCreateInfos;
-    // enabledLayerCount is legacy and should not be used
-    uint32_t                           enabledLayerCount;
-    // ppEnabledLayerNames is legacy and should not be used
-    const char* const*                 ppEnabledLayerNames;
-    uint32_t                           enabledExtensionCount;
-    const char* const*                 ppEnabledExtensionNames;
-    const VkPhysicalDeviceFeatures*    pEnabledFeatures;
-    */
         VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         NULL,
         0,
@@ -160,17 +159,76 @@ void State::initDevice(){
         NULL,   //legacy
         0,
         NULL,
-        NULL
+        NULL // look into these tbh
     };
+    VK_CHECK(vkCreateDevice(physicalDevice, &deviceCI, NULL, &logicalDevice));
 
-    vkCreateDevice(physicalDevice, &deviceCI, NULL, &logicalDevice);
+    vkGetDeviceQueue(logicalDevice, queueFamilyIndex, graphicsQueueIndex, &graphicsQueue);
 }
+
+void State::initFramebuffer(){
+    VkSwapchainCreateInfoKHR swapchainCI = {
+        //     VkStructureType                  sType;
+        //     const void*                      pNext;
+        //     VkSwapchainCreateFlagsKHR        flags;
+        //     VkSurfaceKHR                     surface;
+        //     uint32_t                         minImageCount;
+        //     VkFormat                         imageFormat;
+        //     VkColorSpaceKHR                  imageColorSpace;
+        //     VkExtent2D                       imageExtent;
+        //     uint32_t                         imageArrayLayers;
+        //     VkImageUsageFlags                imageUsage;
+        //     VkSharingMode                    imageSharingMode;
+        //     uint32_t                         queueFamilyIndexCount;
+        //     const uint32_t*                  pQueueFamilyIndices;
+        //     VkSurfaceTransformFlagBitsKHR    preTransform;
+        //     VkCompositeAlphaFlagBitsKHR      compositeAlpha;
+        //     VkPresentModeKHR                 presentMode;
+        //     VkBool32                         clipped;
+        //     VkSwapchainKHR                   oldSwapchain;
+
+    };
+    VK_CHECK(vkCreateSwapchainKHR(logicalDevice, &swapchainCI, NULL, &swapchain));
+
+    for(int i = 0; i < images.size(); i++){
+        VkImageViewCreateInfo imageviewCI = {
+
+//    VkStructureType            sType;
+//    const void*                pNext;
+//    VkImageViewCreateFlags     flags;
+//    VkImage                    image;
+//    VkImageViewType            viewType;
+//    VkFormat                   format;
+//    VkComponentMapping         components;
+//    VkImageSubresourceRange    subresourceRange;
+
+        };
+        vkCreateImageView(logicalDevice, &imageviewCI, NULL, &imageViews[i]);
+    }
+    VkRenderPassCreateInfo renderPassCI = {
+    };
+    VK_CHECK(vkCreateRenderPass(logicalDevice, &renderPassCI, NULL, &renderPass));
+
+    VkFramebufferCreateInfo framebufferCI = {
+        VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        NULL,
+        0,
+        renderPass,
+        static_cast<uint32_t>(images.size()),
+        imageViews.data(),
+        width,
+        height,
+        0
+    };
+    VK_CHECK(vkCreateFramebuffer(logicalDevice, &framebufferCI, NULL, &framebuffer));
+};
 
 void State::initVulkan(){
     setExtensions();
     setLayers();
     initInstance();
     initDevice();
+    initFramebuffer();
 }
 
 void State::initSDL(){
