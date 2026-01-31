@@ -377,3 +377,19 @@ void inline printQueueFamilyProperties(const VkQueueFamilyProperties& p){
     print_u32("timestampValidBits", p.timestampValidBits);
     print_extent3("minImageTransferGranularity", p.minImageTransferGranularity);
 }
+
+void inline printPresentMode(const VkPresentModeKHR p){
+    switch(p){
+      case VK_PRESENT_MODE_IMMEDIATE_KHR                    : std::cout << "\t\tpresentMode : IMMEDIATE_KHR" << std::endl; break;
+      case VK_PRESENT_MODE_MAILBOX_KHR                      : std::cout << "\t\tpresentMode : MAILBOX_KHR" << std::endl; break;
+      case VK_PRESENT_MODE_FIFO_KHR                         : std::cout << "\t\tpresentMode : FIFO_KHR" << std::endl; break;
+      case VK_PRESENT_MODE_FIFO_RELAXED_KHR                 : std::cout << "\t\tpresentMode : FIFO_RELAXED_KHR" << std::endl; break;
+      case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR        : std::cout << "\t\tpresentMode : SHARED_DEMAND_REFRESH_KHR" << std::endl; break;
+      case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR    : std::cout << "\t\tpresentMode : SHARED_CONTINUOUS_REFRESH_KHR" << std::endl; break;
+      case VK_PRESENT_MODE_FIFO_LATEST_READY_KHR            : std::cout << "\t\tpresentMode : FIFO_LATEST_READY_KHR" << std::endl; break;
+#if defined(VK_PRESENT_MODE_FIFO_LATEST_READY_EXT) && (!defined(VK_PRESENT_MODE_FIFO_LATEST_READY_KHR) || VK_PRESENT_MODE_FIFO_LATEST_READY_EXT != VK_PRESENT_MODE_FIFO_LATEST_READY_KHR)
+      case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT            : std::cout << "\t\tpresentMode : FIFO_LATEST_READY_EXT" << std::endl; break;
+#endif
+      default : std::cout << "\t\tpresentMode : invalid ( 0x" << toHexString( static_cast<uint32_t>( p ) ) << " )" << std::endl; break;
+    }
+};
