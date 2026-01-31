@@ -400,8 +400,8 @@ void State::initShaders(){
     std::system(cmd.data());
     const char* spvPath = "../a.spv";
     unsigned char* code;
-    uint32_t size;
-
+    size_t size;
+    code = readFile(spvPath, &size);
     VkShaderModuleCreateInfo sCI = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = NULL,
