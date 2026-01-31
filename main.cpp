@@ -64,6 +64,10 @@ struct State{
 
     VkShaderModule shaderModule;
 
+    size_t frameIndex;
+    std::vector<VkFence> fences;
+    std::vector<VkSemaphore> semaphores;
+
     void initVulkan();
     void setExtensions();
     void setLayers();
@@ -74,6 +78,8 @@ struct State{
     void initFramebuffer();
     void initShaders();
     void initPipeline();
+    void initBuffers();
+    void initSyncPrims();
 
     void initSDL();
     void renderLoop();
@@ -398,7 +404,7 @@ void State::initFramebuffer(){
 void State::initShaders(){
     std::string cmd = "glslc " + static_cast<std::string>(shaderPath);
     std::system(cmd.data());
-    const char* spvPath = "../a.spv";
+    const char* spvPath = "a.spv";
     unsigned char* code;
     size_t size;
     code = readFile(spvPath, &size);
@@ -425,6 +431,14 @@ void State::initPipeline(){
     vkCreatePipelineLayout(logicalDevice, &plCI, NULL, &shaderPipelineLayout);
 };
 
+void State::initBuffers(){
+
+};
+
+void State::initSyncPrims(){
+
+};
+
 void State::initVulkan(){
     setExtensions();
     setLayers();
@@ -433,6 +447,8 @@ void State::initVulkan(){
     initFramebuffer();
     initShaders();
     initPipeline();
+    initBuffers();
+    initSyncPrims();
 }
 
 void State::initSDL(){
@@ -454,7 +470,12 @@ void State::initSDL(){
 void State::renderLoop(){
     while(1){
         std::cout << "running" << '\r' << std::flush;
+        //vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
+        uint32_t imgIdx;
+        //vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, semaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
+
     }
+    vkDeviceWaitIdle(logicalDevice);
 };
 
 int main(){
