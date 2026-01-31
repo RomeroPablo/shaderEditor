@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <iostream>
@@ -10,6 +11,25 @@
     << __FILE__ << ":" << __LINE__ << std::endl; \
     abort(); \
 } } while(0)
+
+inline unsigned char* readFile(const char* path, size_t* size){
+    FILE* file = fopen(path, "rb");
+    if(fseek(file, 0, SEEK_END) != 0){ fclose(file); return NULL; }
+
+    long fileSize = ftell(file);
+    if(fileSize < 0) {fclose(file); return NULL;}
+
+    rewind(file);
+
+    unsigned char* buffer = (unsigned char*)malloc(fileSize);
+
+    size_t bytesRead = fread(buffer, 1, fileSize, file);
+    if(bytesRead != (size_t)fileSize){ free(buffer); fclose(file); return NULL; }
+
+    fclose(file);
+    if(size) *size= bytesRead;
+    return buffer;
+};
 
 std::string inline toHexString( uint32_t v ) { 
     std::stringstream s; s << std::hex << v; return s.str();}

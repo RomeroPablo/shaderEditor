@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <numeric>
+#include <pthread.h>
 #include <sstream>
 #include <vector>
 
@@ -53,16 +54,15 @@ struct State{
     std::vector<VkAttachmentDescription> attachmentDescriptions;
     std::vector<VkSubpassDescription> subpassDescriptions;
     std::vector<VkSubpassDependency> subpassDependencies;
-    std::vector<VkImageView> attachmentImageViews;
 
-    VkFramebuffer framebuffer;
+    std::vector<VkFramebuffer> framebuffers;
 
     std::vector<VkDescriptorSetLayout> descriptorLayouts;
     std::vector<VkPushConstantRange> pcRanges;
     VkPipelineLayout shaderPipelineLayout;
     VkPipeline shaderPipeline;
 
-    VkShaderModule shader;
+    VkShaderModule shaderModule;
 
     void initVulkan();
     void setExtensions();
@@ -71,7 +71,6 @@ struct State{
 
     void initGraphics();
     void initDevice();
-    void initCommandPool();
     void initFramebuffer();
     void initShaders();
     void initPipeline();
@@ -79,7 +78,6 @@ struct State{
     void initSDL();
     void renderLoop();
     void exit();
-    static VkShaderModule shaderProcessor(std::string shaderPath);
 };
 
 void State::setExtensions(){
@@ -376,23 +374,43 @@ void State::initFramebuffer(){
     };
     VK_CHECK(vkCreateRenderPass(logicalDevice, &rpCI, NULL, &renderPass));
 
-    VkFramebufferCreateInfo fbCI = {
-        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .renderPass = renderPass,
-        .attachmentCount = static_cast<uint32_t>(attachmentImageViews.size()),
-        .pAttachments = attachmentImageViews.data(),
-        .width = width,
-        .height = height,
-        .layers = 1,
-    };
-    VK_CHECK(vkCreateFramebuffer(logicalDevice, &fbCI, NULL, &framebuffer));
+    framebuffers.resize(swapchainImageViews.size());
+    for(auto i{0uz}; i < framebuffers.size(); i++){
+        std::vector<VkImageView> imageViews = {
+            swapchainImageViews[i]
+        };
+
+        VkFramebufferCreateInfo fbCI = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .renderPass = renderPass,
+            .attachmentCount = static_cast<uint32_t>(imageViews.size()),
+            .pAttachments = imageViews.data(),
+            .width = width,
+            .height = height,
+            .layers = 1,
+        };
+        VK_CHECK(vkCreateFramebuffer(logicalDevice, &fbCI, NULL, &framebuffers[i]));
+    }
 };
 
-void State::initCommandPool(){
+void State::initShaders(){
+    std::string cmd = "glslc " + static_cast<std::string>(shaderPath);
+    std::system(cmd.data());
+    const char* spvPath = "../a.spv";
+    unsigned char* code;
+    uint32_t size;
 
-}
+    VkShaderModuleCreateInfo sCI = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = NULL,
+        .flags =  0,
+        .codeSize = size,
+        .pCode = (const uint32_t*)code,
+    };
+    VK_CHECK(vkCreateShaderModule(logicalDevice, &sCI, NULL, &shaderModule));
+};
 
 void State::initPipeline(){
     VkPipelineLayoutCreateInfo plCI = {
@@ -412,8 +430,8 @@ void State::initVulkan(){
     setLayers();
     initInstance();
     initDevice();
-    initCommandPool();
     initFramebuffer();
+    initShaders();
     initPipeline();
 }
 
@@ -433,16 +451,7 @@ void State::initSDL(){
     };
 }
 
-VkShaderModule State::shaderProcessor(std::string shaderPath){
-    VkShaderModule spv;
-    std::string cmd = "glslc " + static_cast<std::string>(shaderPath);
-    std::system(cmd.data());
-    return spv;
-};
-
-
 void State::renderLoop(){
-    shader = shaderProcessor(shaderPath);
     while(1){
         std::cout << "running" << '\r' << std::flush;
     }
