@@ -15,6 +15,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
+#include "SDL_events.h"
 #include "SDL_video.h"
 #include "helpers.hpp"
 
@@ -23,6 +24,7 @@ struct State{
     SDL_Window* window;
     uint32_t width = 640;
     uint32_t height = 480;
+    bool running = true;
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
@@ -68,6 +70,8 @@ struct State{
     std::vector<VkFence> fences;
     std::vector<VkSemaphore> semaphores;
 
+    std::vector<VkCommandBuffer> commandBuffers;
+
     void initVulkan();
     void setExtensions();
     void setLayers();
@@ -82,6 +86,7 @@ struct State{
     void initSyncPrims();
 
     void initSDL();
+    void getInput();
     void renderLoop();
     void exit();
 };
@@ -467,13 +472,39 @@ void State::initSDL(){
     };
 }
 
-void State::renderLoop(){
-    while(1){
-        std::cout << "running" << '\r' << std::flush;
-        //vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
-        uint32_t imgIdx;
-        //vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, semaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
+void State::getInput(){
+        SDL_Event e;
+        SDL_PollEvent(&e);
+        switch(e.type){
+            case SDL_QUIT : running = false; break;
+            default: break;
+        }
+}
 
+void State::renderLoop(){
+    while(running){
+        std::cout << "running" << '\r' << std::flush;
+        vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
+        uint32_t imgIdx;
+        vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, semaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
+        // you might want to do stuff here? idrk
+        // other program captures delta time, and gets imgui texture/builds imgui frame...
+
+        vkResetFences(logicalDevice, 1, &fences[frameIndex]);
+        vkResetCommandBuffer(commandBuffers[frameIndex], 0);
+
+
+        VkSubmitInfo submitInfo = {
+
+
+        };
+        vkQueueSubmit(queue, 1, &submitInfo, fences[frameIndex]);
+
+        VkPresentInfoKHR presentInfo = {
+
+        };
+        vkQueuePresentKHR(queue, &presentInfo);
+        frameIndex = (frameIndex + 1) % swapchainImages.size();
     }
     vkDeviceWaitIdle(logicalDevice);
 };
