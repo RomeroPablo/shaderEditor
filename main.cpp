@@ -25,7 +25,8 @@ struct Vertex{
 };
 
 struct State{
-    const char* shaderPath = "../shader.frag";
+    const char* shaderFragPath = "../shader.frag";
+    const char* shaderVertPath = "../shader.vert";
     SDL_Window* window;
     uint32_t width = 640;
     uint32_t height = 480;
@@ -68,10 +69,13 @@ struct State{
     VkPipelineLayout shaderPipelineLayout;
     VkPipeline shaderPipeline;
 
+    VkViewport viewport;
+    VkRect2D scissor;
+
     VkShaderModule fragModule;
     VkShaderModule vertModule;
 
-    size_t frameIndex{0uz};
+    uint32_t frameIndex{0uz};
     std::vector<VkFence> fences;
     std::vector<VkSemaphore> renderCompleteSemaphores;
 
@@ -97,7 +101,7 @@ struct State{
     void initShaders();
     void initPipeline();
     void initResources();
-    void runRenderPass();
+    void runRenderPass(uint32_t imgIdx);
 
     void initSDL();
     void getInput();
@@ -437,13 +441,14 @@ uint32_t State::findMemoryType(VkMemoryPropertyFlags f, uint32_t typeFilter){
 };
 
 void State::initShaders(){
+    const char* fragPath = "frag.spv";
+    const char* vertPath = "vert.spv";
     std::cout << "[+] Creating Kernels" << std::endl;
-    std::string cmd = "glslc " + static_cast<std::string>(shaderPath);
+    std::string cmd = "glslc " + static_cast<std::string>(shaderFragPath) + " -o " + fragPath;
     std::system(cmd.data());
-    const char* spvPath = "a.spv";
     unsigned char* code;
     size_t codeSize;
-    code = readFile(spvPath, &codeSize);
+    code = readFile(fragPath, &codeSize);
     VkShaderModuleCreateInfo sCI = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = NULL,
@@ -452,6 +457,19 @@ void State::initShaders(){
         .pCode = (const uint32_t*)code,
     };
     VK_CHECK(vkCreateShaderModule(logicalDevice, &sCI, NULL, &fragModule));
+
+    cmd =  "glslc " + static_cast<std::string>(shaderVertPath) + " -o " + vertPath;
+    std::system(cmd.data());
+    code = readFile(vertPath, &codeSize);
+    sCI = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = NULL,
+        .flags =  0,
+        .codeSize = codeSize,
+        .pCode = (const uint32_t*)code,
+    };
+    VK_CHECK(vkCreateShaderModule(logicalDevice, &sCI, NULL, &vertModule));
+
     free(code);
 
     vertices = {
@@ -576,7 +594,7 @@ void State::initPipeline(){
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
         .module = fragModule,
         .pName = "main",
         .pSpecializationInfo = NULL
@@ -586,7 +604,7 @@ void State::initPipeline(){
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
         .module = vertModule,
         .pName = "main",
         .pSpecializationInfo = NULL
@@ -612,21 +630,31 @@ void State::initPipeline(){
         .primitiveRestartEnable = 0,
     };
 
-    VkPipelineTessellationStateCreateInfo tsCI = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .patchControlPoints = 0,
+    viewport = {
+        .x = 0,
+        .y = 0,
+        .width = static_cast<float>(width),
+        .height = static_cast<float>(height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+
+    scissor = {
+        .offset = {},
+        .extent = {
+            .width = width,
+            .height = height
+        }
     };
 
     VkPipelineViewportStateCreateInfo vsCI = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .viewportCount = 0,
-        .pViewports = NULL,
-        .scissorCount = 0,
-        .pScissors = NULL,
+        .viewportCount = 1,
+        .pViewports = &viewport,
+        .scissorCount = 1,
+        .pScissors = &scissor,
     };
 
     VkPipelineRasterizationStateCreateInfo rsCI = {
@@ -663,7 +691,7 @@ void State::initPipeline(){
         .flags = 0,
         .depthTestEnable = 0,
         .depthWriteEnable = 0,
-        .depthCompareOp = VK_COMPARE_OP_NEVER,
+        .depthCompareOp = VK_COMPARE_OP_ALWAYS,
         .depthBoundsTestEnable = 0,
         .stencilTestEnable = 0,
         .front = {},
@@ -672,14 +700,27 @@ void State::initPipeline(){
         .maxDepthBounds = 1.0f,
     };
 
+    VkPipelineColorBlendAttachmentState colorBlend = {
+        .blendEnable = VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                          VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT |
+                          VK_COLOR_COMPONENT_A_BIT
+    };
     VkPipelineColorBlendStateCreateInfo cbCI = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
         .logicOpEnable = 0,
-        .logicOp = VK_LOGIC_OP_NO_OP,
-        .attachmentCount = 0,
-        .pAttachments = NULL,
+        .logicOp = VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlend,
         .blendConstants = {0.0f,0.0f,0.0f,0.0f}
     };
 
@@ -699,7 +740,7 @@ void State::initPipeline(){
         .pStages = ss,
         .pVertexInputState = &viCI,
         .pInputAssemblyState = &iaCI,
-        .pTessellationState = &tsCI,
+        .pTessellationState = NULL,
         .pViewportState = &vsCI,
         .pRasterizationState = &rsCI,
         .pMultisampleState = &msCI,
@@ -712,8 +753,7 @@ void State::initPipeline(){
         .basePipelineHandle = NULL,
         .basePipelineIndex = -1, 
     };
-    vkCreateGraphicsPipelines(logicalDevice, NULL, 1, &gpCI, NULL, &shaderPipeline);
-
+    VK_CHECK(vkCreateGraphicsPipelines(logicalDevice, NULL, 1, &gpCI, NULL, &shaderPipeline));
 };
 
 void State::initResources(){
@@ -773,7 +813,7 @@ void State::getInput(){
         }
 }
 
-void State::runRenderPass(){
+void State::runRenderPass(uint32_t imgIdx){
     VkCommandBufferBeginInfo cbCI = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
@@ -787,7 +827,7 @@ void State::runRenderPass(){
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = NULL,
         .renderPass = renderPass,
-        .framebuffer = framebuffers[frameIndex],
+        .framebuffer = framebuffers[imgIdx],
         .renderArea = {{0,0},{width, height}},
         .clearValueCount = sizeof(clearColor)/sizeof(VkClearValue),
         .pClearValues = clearColor
@@ -812,11 +852,10 @@ void State::renderLoop(){
         vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
         uint32_t imgIdx;
         vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
-
         vkResetFences(logicalDevice, 1, &fences[frameIndex]);
         vkResetCommandBuffer(commandBuffers[frameIndex], 0);
 
-        runRenderPass();
+        runRenderPass(imgIdx);
 
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         VkSubmitInfo submitInfo = {
@@ -828,7 +867,7 @@ void State::renderLoop(){
             .commandBufferCount = 1,
             .pCommandBuffers = &commandBuffers[frameIndex],
             .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &renderCompleteSemaphores[frameIndex], 
+            .pSignalSemaphores = &renderCompleteSemaphores[imgIdx], 
         };
         vkQueueSubmit(queue, 1, &submitInfo, fences[frameIndex]);
 
@@ -836,8 +875,8 @@ void State::renderLoop(){
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .pNext = NULL,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &renderCompleteSemaphores[frameIndex],
-            .swapchainCount = static_cast<uint32_t>(swapchainImages.size()),
+            .pWaitSemaphores = &renderCompleteSemaphores[imgIdx],
+            .swapchainCount = 1,
             .pSwapchains = &swapchain, 
             .pImageIndices = &imgIdx,
             .pResults = NULL
