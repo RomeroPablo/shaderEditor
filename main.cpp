@@ -1,5 +1,6 @@
 #include <SDL2/SDL_vulkan.h>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -31,6 +32,7 @@ struct State{
     uint32_t width = 640;
     uint32_t height = 480;
     bool running = true;
+    std::chrono::time_point<std::chrono::high_resolution_clock> tStart{}, tEnd{};
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
@@ -101,7 +103,9 @@ struct State{
     void initShaders();
     void initPipeline();
     void initResources();
-    void runRenderPass(uint32_t imgIdx);
+    void runRenderPass(uint32_t imgIdx, VkPipeline pipeline);
+    void buildDefaultShader();
+    void rebuildShader();
 
     void initSDL();
     void getInput();
@@ -809,11 +813,12 @@ void State::getInput(){
         SDL_PollEvent(&e);
         switch(e.type){
             case SDL_QUIT : running = false; break;
+            case SDL_KEYDOWN : if(e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false; break;
             default: break;
         }
 }
 
-void State::runRenderPass(uint32_t imgIdx){
+void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
     VkCommandBufferBeginInfo cbCI = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
@@ -836,7 +841,7 @@ void State::runRenderPass(uint32_t imgIdx){
     vkBeginCommandBuffer(commandBuffers[frameIndex], &cbCI);
     vkCmdBeginRenderPass(commandBuffers[frameIndex], &rpBI, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, shaderPipeline);
+    vkCmdBindPipeline(commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     VkBuffer vertexBuffers[] = {vertexBuffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffers[frameIndex], 0, 1, &vertexBuffer, offsets);
@@ -846,16 +851,28 @@ void State::runRenderPass(uint32_t imgIdx){
     vkEndCommandBuffer(commandBuffers[frameIndex]);
 }
 
+void State::buildDefaultShader(){
+    // we can just ship the spv data with the app...
+    // it is default.frag
+};
+void State::rebuildShader(){
+    // of course, recreate the shader module from the code
+    // we should also cache a blank one that we default to so that we don't crash
+    // we use this if glslc did not return a working shader
+};
+
 void State::renderLoop(){
     std::cout << "[+] Entering RenderLoop" << std::endl;
     while(running){
+        tStart = std::chrono::high_resolution_clock::now();
+        getInput();
         vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
         uint32_t imgIdx;
         vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
         vkResetFences(logicalDevice, 1, &fences[frameIndex]);
         vkResetCommandBuffer(commandBuffers[frameIndex], 0);
 
-        runRenderPass(imgIdx);
+        runRenderPass(imgIdx, shaderPipeline);
 
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         VkSubmitInfo submitInfo = {
@@ -883,6 +900,7 @@ void State::renderLoop(){
         };
         vkQueuePresentKHR(queue, &presentInfo);
         frameIndex = (frameIndex + 1) % swapchainImages.size();
+        tEnd = std::chrono::high_resolution_clock::now();
     }
     vkDeviceWaitIdle(logicalDevice);
 };
@@ -896,7 +914,34 @@ int main(){
 }
 
 void State::exit(){
+    for(size_t i{0uz}; i<swapchainImages.size(); i++){
+        vkDestroyFramebuffer(logicalDevice, framebuffers[i], NULL);
+        vkDestroyImageView(logicalDevice, swapchainImageViews[i], NULL);
+        vkDestroyFence(logicalDevice, fences[i], NULL);
+        vkDestroySemaphore(logicalDevice, imageAvailableSemaphores[i], NULL);
+        vkDestroySemaphore(logicalDevice, renderCompleteSemaphores[i], NULL);
+    };
+    vkDestroySwapchainKHR(logicalDevice, swapchain, NULL);
+    SDL_DestroyWindow(window);
+
+    vkDestroyBuffer(logicalDevice, vertexBuffer, NULL);
+    vkFreeMemory(logicalDevice, vertexBufferMemory, NULL);
+
+    vkDestroyPipeline(logicalDevice, shaderPipeline, NULL);
+    vkDestroyPipelineLayout(logicalDevice, shaderPipelineLayout, NULL);
+
+    vkDestroyRenderPass(logicalDevice, renderPass, NULL);
+    vkDestroyShaderModule(logicalDevice, fragModule, NULL);
+    vkDestroyShaderModule(logicalDevice, vertModule, NULL);
+
+    vkFreeCommandBuffers(logicalDevice, commandPool, commandBuffers.size(), commandBuffers.data());
+    vkDestroyCommandPool(logicalDevice, commandPool, NULL);
+
+    vkDestroyDevice(logicalDevice, NULL);
+    vkDestroySurfaceKHR(instance, surface, NULL);
 
     vkDestroyInstance(instance, NULL);
+    SDL_Quit();
+
     std::cout << "exit(0)" << std::endl;
 };
