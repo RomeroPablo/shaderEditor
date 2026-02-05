@@ -329,7 +329,7 @@ void State::initFramebuffer(){
             .flags = 0,
             .image = swapchainImages[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = surfaceFormats->format,
+            .format = swapchainImageFormat,
             .components = {},
             .subresourceRange = { 
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, 
@@ -561,7 +561,7 @@ void State::initShaders(){
         .pInheritanceInfo = NULL,
     };
     vkBeginCommandBuffer(commandBuffers[0], &cbBI);
-    VkBufferCopy copyRegion = {.size = memReqs.size};
+    VkBufferCopy copyRegion = {.size = bufferSize};
     vkCmdCopyBuffer(commandBuffers[0], stagingBuffer, vertexBuffer, 1, &copyRegion);
     vkEndCommandBuffer(commandBuffers[0]);
 
