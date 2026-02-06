@@ -20,6 +20,8 @@
 #include "SDL_video.h"
 #include "helpers.hpp"
 
+#include <sys/stat.h>
+
 struct Vertex{
     float pos[3];
     float color[3];
@@ -27,6 +29,7 @@ struct Vertex{
 
 struct State{
     const char* shaderFragPath = "../shader.frag";
+    timespec fragTs;
     const char* shaderVertPath = "../shader.vert";
     SDL_Window* window;
     uint32_t width = 640;
@@ -101,15 +104,15 @@ struct State{
     void initDevice();
     void initFramebuffer();
     void initShaders();
-    void initPipeline();
+    void buildPipeline(VkShaderModule fragModule);
     void initResources();
     void runRenderPass(uint32_t imgIdx, VkPipeline pipeline);
-    void buildDefaultShader();
-    void rebuildShader();
+    void rebuildFragShader();
 
     void initSDL();
     void getInput();
     void renderLoop();
+    void appLogic();
     void exit();
 };
 
@@ -449,7 +452,11 @@ void State::initShaders(){
     const char* vertPath = "vert.spv";
     std::cout << "[+] Creating Kernels" << std::endl;
     std::string cmd = "glslc " + static_cast<std::string>(shaderFragPath) + " -o " + fragPath;
+
     std::system(cmd.data());
+    struct stat st;
+    stat(shaderFragPath, &st);
+    fragTs = st.st_mtim;
     unsigned char* code;
     size_t codeSize;
     code = readFile(fragPath, &codeSize);
@@ -581,7 +588,7 @@ void State::initShaders(){
     vkFreeMemory(logicalDevice, stagingBufferMemory, NULL);
 };
 
-void State::initPipeline(){
+void State::buildPipeline(VkShaderModule fragModule){
     std::cout << "[+] Creating Pipelines" << std::endl;
     VkPipelineLayoutCreateInfo plCI = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -789,7 +796,7 @@ void State::initVulkan(){
     initFramebuffer();
     initResources();
     initShaders();
-    initPipeline();
+    buildPipeline(fragModule);
 }
 
 void State::initSDL(){
@@ -851,27 +858,60 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
     vkEndCommandBuffer(commandBuffers[frameIndex]);
 }
 
-void State::buildDefaultShader(){
-    // we can just ship the spv data with the app...
-    // it is default.frag
-};
-void State::rebuildShader(){
+void State::rebuildFragShader(){
     // of course, recreate the shader module from the code
     // we should also cache a blank one that we default to so that we don't crash
     // we use this if glslc did not return a working shader
+
+    const char* fragPath = "frag.spv";
+    std::cout << "[+] Rebuilding Frag ... " << std::endl;
+    std::string cmd = "glslc " + static_cast<std::string>(shaderFragPath) + " -o " + fragPath;
+
+    uint32_t res = std::system(cmd.data());
+    if(res != 0){
+        std::cout << "[!] Failed to build Frag" << std::endl;
+        return;
+    };
+
+    struct stat st;
+    stat(shaderFragPath, &st);
+    fragTs = st.st_mtim;
+    unsigned char* code;
+    size_t codeSize;
+    code = readFile(fragPath, &codeSize);
+    VkShaderModuleCreateInfo sCI = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = NULL,
+        .flags =  0,
+        .codeSize = codeSize,
+        .pCode = (const uint32_t*)code,
+    };
+    VK_CHECK(vkCreateShaderModule(logicalDevice, &sCI, NULL, &fragModule));
+
+    buildPipeline(fragModule);
+};
+
+void State::appLogic(){
+    getInput();
+    struct stat st;
+    stat(shaderFragPath, &st);
+    if(st.st_mtim.tv_sec > fragTs.tv_sec){ // ~1 second buffer is fine, 'ignores' spam writes
+        std::cout << "file has been written" << std::endl;
+        fragTs = st.st_mtim;
+        rebuildFragShader();
+    }
 };
 
 void State::renderLoop(){
     std::cout << "[+] Entering RenderLoop" << std::endl;
     while(running){
         tStart = std::chrono::high_resolution_clock::now();
-        getInput();
+        appLogic();
         vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
         uint32_t imgIdx;
         vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
         vkResetFences(logicalDevice, 1, &fences[frameIndex]);
         vkResetCommandBuffer(commandBuffers[frameIndex], 0);
-
         runRenderPass(imgIdx, shaderPipeline);
 
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -901,6 +941,7 @@ void State::renderLoop(){
         vkQueuePresentKHR(queue, &presentInfo);
         frameIndex = (frameIndex + 1) % swapchainImages.size();
         tEnd = std::chrono::high_resolution_clock::now();
+        //std::cout << '\r' << tEnd - tStart;
     }
     vkDeviceWaitIdle(logicalDevice);
 };
@@ -943,5 +984,5 @@ void State::exit(){
     vkDestroyInstance(instance, NULL);
     SDL_Quit();
 
-    std::cout << "exit(0)" << std::endl;
+    std::cout << std::endl << "exit(0)" << std::endl;
 };
