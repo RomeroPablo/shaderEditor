@@ -1,7 +1,14 @@
 #version 450
 
-layout(location = 0) out vec4 outColor;
-void main(){
-    vec2 c = gl_FragCoord.xy / vec2(640.0, 480.0);
-    outColor = vec4(0.0, c, 1.0);
+layout(location = 0) out vec4 fragColor;
+
+layout(push_constant) uniform PushConstants {
+    vec2  resolution;
+    float time;
+    float _pad;
+} pc;
+
+void main() {
+    vec2 c = gl_FragCoord.xy / pc.resolution;
+    fragColor = vec4(c, sin(pc.time),1.0);
 }

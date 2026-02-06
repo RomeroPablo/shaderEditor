@@ -1,4 +1,5 @@
 #include <SDL2/SDL_vulkan.h>
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
@@ -7,6 +8,7 @@
 #include <iostream>
 #include <numeric>
 #include <pthread.h>
+#include <ratio>
 #include <sstream>
 #include <vector>
 
@@ -17,6 +19,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include "SDL_events.h"
+#include "SDL_timer.h"
 #include "SDL_video.h"
 #include "helpers.hpp"
 
@@ -25,6 +28,12 @@
 struct Vertex{
     float pos[3];
     float color[3];
+};
+
+struct PushConstants{
+    float resolution[2];
+    float time;
+    float _pad;
 };
 
 struct State{
@@ -36,6 +45,8 @@ struct State{
     uint32_t height = 480;
     bool running = true;
     std::chrono::time_point<std::chrono::high_resolution_clock> tStart{}, tEnd{};
+    std::chrono::duration<float> runtime{};
+    double frameTime = 1000.0/60.0;
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
@@ -590,14 +601,20 @@ void State::initShaders(){
 
 void State::buildPipeline(VkShaderModule fragModule){
     std::cout << "[+] Creating Pipelines" << std::endl;
+    VkPushConstantRange pcR = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(PushConstants),
+    };
+
     VkPipelineLayoutCreateInfo plCI = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
         .setLayoutCount = 0,
         .pSetLayouts = NULL, 
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = NULL,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pcR,
     };
     VK_CHECK(vkCreatePipelineLayout(logicalDevice, &plCI, NULL, &shaderPipelineLayout));
 
@@ -849,6 +866,9 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
     vkCmdBeginRenderPass(commandBuffers[frameIndex], &rpBI, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    struct PushConstants pc = { {640.0f, 480.0f}, runtime.count(), 0.0f, };
+    vkCmdPushConstants(commandBuffers[frameIndex], shaderPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
+
     VkBuffer vertexBuffers[] = {vertexBuffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffers[frameIndex], 0, 1, &vertexBuffer, offsets);
@@ -940,8 +960,10 @@ void State::renderLoop(){
         };
         vkQueuePresentKHR(queue, &presentInfo);
         frameIndex = (frameIndex + 1) % swapchainImages.size();
+
         tEnd = std::chrono::high_resolution_clock::now();
-        //std::cout << '\r' << tEnd - tStart;
+        std::chrono::duration<float> delta = tEnd - tStart;
+        runtime += delta;
     }
     vkDeviceWaitIdle(logicalDevice);
 };
