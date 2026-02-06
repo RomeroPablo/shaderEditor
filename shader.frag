@@ -10,5 +10,5 @@ layout(push_constant) uniform PushConstants {
 
 void main() {
     vec2 c = gl_FragCoord.xy / pc.resolution;
-    fragColor = vec4(c, sin(pc.time),1.0);
+    fragColor = vec4(c, abs(sin(pc.time)),1.0);
 }

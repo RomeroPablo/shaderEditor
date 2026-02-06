@@ -38,8 +38,8 @@ struct PushConstants{
 
 struct State{
     const char* shaderFragPath = "../shader.frag";
-    timespec fragTs;
     const char* shaderVertPath = "../shader.vert";
+    timespec fragTs;
     SDL_Window* window;
     uint32_t width = 640;
     uint32_t height = 480;
@@ -111,7 +111,6 @@ struct State{
 
     uint32_t findMemoryType(VkMemoryPropertyFlags f, uint32_t typeFilter);
 
-    void initGraphics();
     void initDevice();
     void initFramebuffer();
     void initShaders();
@@ -879,10 +878,6 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
 }
 
 void State::rebuildFragShader(){
-    // of course, recreate the shader module from the code
-    // we should also cache a blank one that we default to so that we don't crash
-    // we use this if glslc did not return a working shader
-
     const char* fragPath = "frag.spv";
     std::cout << "[+] Rebuilding Frag ... " << std::endl;
     std::string cmd = "glslc " + static_cast<std::string>(shaderFragPath) + " -o " + fragPath;
@@ -915,7 +910,7 @@ void State::appLogic(){
     getInput();
     struct stat st;
     stat(shaderFragPath, &st);
-    if(st.st_mtim.tv_sec > fragTs.tv_sec){ // ~1 second buffer is fine, 'ignores' spam writes
+    if(st.st_mtim.tv_sec > fragTs.tv_sec){
         std::cout << "file has been written" << std::endl;
         fragTs = st.st_mtim;
         rebuildFragShader();
@@ -927,11 +922,13 @@ void State::renderLoop(){
     while(running){
         tStart = std::chrono::high_resolution_clock::now();
         appLogic();
+
         vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
         uint32_t imgIdx;
         vkAcquireNextImageKHR(logicalDevice, swapchain, UINT64_MAX, imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imgIdx);
         vkResetFences(logicalDevice, 1, &fences[frameIndex]);
         vkResetCommandBuffer(commandBuffers[frameIndex], 0);
+
         runRenderPass(imgIdx, shaderPipeline);
 
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
