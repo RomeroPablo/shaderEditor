@@ -41,12 +41,12 @@ struct State{
     const char* shaderVertPath = "../shader.vert";
     timespec fragTs;
     SDL_Window* window;
-    uint32_t width = 640;
-    uint32_t height = 480;
+    uint32_t width = 1920;
+    uint32_t height = 1080;
     bool running = true;
     std::chrono::time_point<std::chrono::high_resolution_clock> tStart{}, tEnd{};
     std::chrono::duration<float> runtime{};
-    double frameTime = 1000.0/60.0;
+    double frameTime = 1000.0/300.0;
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
