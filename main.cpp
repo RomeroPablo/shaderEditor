@@ -12,11 +12,17 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
+#define SDL_MAIN_HANDLED 1
+#endif
+
 #if __has_include(<SDL2/SDL.h>)
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_main.h>
 #include <SDL2/SDL_vulkan.h>
 #else
 #include <SDL.h>
+#include <SDL_main.h>
 #include <SDL_vulkan.h>
 #endif
 
@@ -825,6 +831,7 @@ void State::initVulkan(){
 }
 
 void State::initSDL(){
+    SDL_SetMainReady();
     SDL_Init(SDL_INIT_VIDEO);
     SDL_Vulkan_LoadLibrary(nullptr);
     window = SDL_CreateWindow("Shader Editor", 

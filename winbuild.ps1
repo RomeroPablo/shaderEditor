@@ -99,14 +99,14 @@ try {
         $includeDirs = $includeDirs | Where-Object { $_ } | Select-Object -Unique
         $libDirs = $libDirs | Where-Object { $_ } | Select-Object -Unique
 
-        $compileArgs = @('-std=c++23', '-O3', 'main.cpp')
+        $compileArgs = @('-std=c++23', '-O3', 'main.cpp', '-D_CRT_SECURE_NO_WARNINGS')
         foreach ($inc in $includeDirs) {
             $compileArgs += @('-I', $inc)
         }
         foreach ($libDir in $libDirs) {
             $compileArgs += @('-L', $libDir)
         }
-        $compileArgs += @('-o', $binaryPath, '-lSDL2', '-lSDL2main', '-lvulkan-1')
+        $compileArgs += @('-o', $binaryPath, '-lSDL2', '-lvulkan-1')
 
         Write-Host "$compiler $($compileArgs -join ' ')"
         & $compiler @compileArgs
