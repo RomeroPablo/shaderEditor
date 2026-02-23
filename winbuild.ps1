@@ -1,7 +1,8 @@
 <#
     Windows companion to ./build.
-    Compiles artifacts\shaders.exe with clang++/g++ and launches it from artifacts/.
-    Pass -Clean to remove artifacts or -SkipRun to skip launching the app.
+    Compiles artifacts\shaders.exe with clang++/g++,
+    moves it to the repo root, and launches it from there.
+    Pass -Clean to remove artifacts/root binary or -SkipRun to skip launching the app.
 #>
 [CmdletBinding()]
 param(
@@ -21,6 +22,7 @@ try {
     $artifactsDir = Join-Path $repoRoot 'artifacts'
     $binaryName = 'shaders.exe'
     $binaryPath = Join-Path $artifactsDir $binaryName
+    $rootBinaryPath = Join-Path $repoRoot $binaryName
 
     if ($Clean) {
         if (Test-Path $artifactsDir) {
@@ -28,6 +30,10 @@ try {
             Write-Host "Removed $artifactsDir"
         } else {
             Write-Host 'Nothing to clean.'
+        }
+        if (Test-Path $rootBinaryPath) {
+            Remove-Item $rootBinaryPath -Force
+            Write-Host "Removed $rootBinaryPath"
         }
         return
     }
@@ -117,11 +123,20 @@ try {
         Write-Host 'artifacts\shaders.exe is up to date.'
     }
 
+    if (-not (Test-Path $binaryPath)) {
+        throw "Expected compiled binary at '$binaryPath' but it was not found."
+    }
+    if (Test-Path $rootBinaryPath) {
+        Remove-Item $rootBinaryPath -Force
+    }
+    Move-Item -Path $binaryPath -Destination $rootBinaryPath -Force
+    Write-Host "Moved $binaryPath to $rootBinaryPath"
+
     if ($SkipRun) {
         return
     }
 
-    Push-Location $artifactsDir
+    Push-Location $repoRoot
     try {
         & ".\${binaryName}"
     } finally {
