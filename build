@@ -1,11 +1,11 @@
 #!/bin/sh
 
 if [ "$1" = "clean" ]; then
-    rm -rf artifacts
+    rm -rf artifacts shaders
     exit 0
 fi
 
-if [ artifacts/shaders -ot main.cpp ] || [ artifacts/shaders -ot helpers.hpp ]; then
+if [ artifacts/shaders -ot main.cpp ] || [ artifacts/shaders -ot lib.hpp ]; then
     mkdir -p artifacts
     echo "compiling..."
     bear --output artifacts/compile_commands.json -- \
@@ -13,6 +13,5 @@ if [ artifacts/shaders -ot main.cpp ] || [ artifacts/shaders -ot helpers.hpp ]; 
         -o artifacts/shaders
 fi
 
-cd artifacts/
+mv ./artifacts/shaders .
 ./shaders
-cd ..

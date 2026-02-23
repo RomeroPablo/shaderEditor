@@ -29,7 +29,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-#include "helpers.hpp"
+#include "lib.hpp"
 
 namespace fs = std::filesystem;
 
@@ -54,12 +54,12 @@ struct PushConstants{
 };
 
 struct State{
-    const char* shaderFragPath = "../shader.frag";
-    const char* shaderVertPath = "../shader.vert";
+    const char* shaderFragPath = "kernels/shader.frag";
+    const char* shaderVertPath = "kernels/shader.vert";
     fs::file_time_type fragTs{};
     SDL_Window* window;
-    uint32_t width = 1920;
-    uint32_t height = 1080;
+    uint32_t width = 640;
+    uint32_t height = 480;
     bool running = true;
     std::chrono::time_point<std::chrono::steady_clock> tStart{}, tEnd{};
     std::chrono::duration<float> runtime{};
@@ -475,8 +475,8 @@ uint32_t State::findMemoryType(VkMemoryPropertyFlags f, uint32_t typeFilter){
 };
 
 void State::initShaders(){
-    const std::string fragPath = "frag.spv";
-    const std::string vertPath = "vert.spv";
+    const std::string fragPath = "artifacts/frag.spv";
+    const std::string vertPath = "artifacts/vert.spv";
     std::cout << "[+] Creating Kernels" << std::endl;
     std::string cmd = "glslc \"" + static_cast<std::string>(shaderFragPath) + "\" -o \"" + fragPath + "\"";
 
@@ -894,7 +894,7 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
 }
 
 void State::rebuildFragShader(){
-    const std::string fragPath = "frag.spv";
+    const std::string fragPath = "artifacts/frag.spv";
     std::cout << "[+] Rebuilding Frag ... " << std::endl;
     std::string cmd = "glslc \"" + static_cast<std::string>(shaderFragPath) + "\" -o \"" + fragPath + "\"";
 

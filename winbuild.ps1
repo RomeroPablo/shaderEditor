@@ -32,7 +32,7 @@ try {
         return
     }
 
-    $sourceFiles = @('main.cpp', 'helpers.hpp')
+    $sourceFiles = @('main.cpp', 'lib.hpp')
     $needsBuild = -not (Test-Path $binaryPath)
     if (-not $needsBuild) {
         $binaryStamp = (Get-Item $binaryPath).LastWriteTimeUtc
