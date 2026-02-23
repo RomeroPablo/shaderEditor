@@ -32,25 +32,20 @@ void main(){
 
     mat2 m1 = mat2(1.0,1.0,-1.0,1.0);
     mat2 m2 = mat2(1.0,-1.0,1.0,1.0);
-    mat2 m3 = mat2(1.0,1.0,1.0,0.0);
 
     vec2 a = abs(m2*p);
-    vec2 b = abs(m1*p);
-    vec2 c = abs(m3*p);
 
-
-    float d = 0.1/abs(max(a.y,abs(p.y)));
-            //+ 0.1/max(a.x,abs(a.y-0.12)-0.08);
+    float d = 0.1/abs(max(a.y-0.03,abs(p.y)-0.1));
+//            + 0.1/max(a.x,abs(a.y-0.12)-0.08);
 
     float n = 0.0;
-    for(int i=0;i<7;i++) {
+    for(int i=0;i<6;i++) {
         p = -m1*p + pc.time*0.4;
         n += snoise2D(p);
     }
-
     n = n * 0.9 + 4.0;
 
-    vec4 o = tanh(vec4(3.0,3.0,3.0,1.0) * d * n * 0.010);
+    vec4 o = tanh(vec4(1.0,2.0,3.0,1.0) * d * n * 0.018);
 
     fragColor = vec4(o.rgb, 1.0);
 }

@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <ratio>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 #include <SDL2/SDL.h>
@@ -44,9 +45,9 @@ struct State{
     uint32_t width = 1920;
     uint32_t height = 1080;
     bool running = true;
-    std::chrono::time_point<std::chrono::high_resolution_clock> tStart{}, tEnd{};
+    std::chrono::time_point<std::chrono::steady_clock> tStart{}, tEnd{};
     std::chrono::duration<float> runtime{};
-    double frameTime = 1000.0/300.0;
+    std::chrono::duration<float> frameTime{1.0f / 144.0f};
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
@@ -865,7 +866,7 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
     vkCmdBeginRenderPass(commandBuffers[frameIndex], &rpBI, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    struct PushConstants pc = { {640.0f, 480.0f}, runtime.count(), 0.0f, };
+    struct PushConstants pc = { {static_cast<float>(width), static_cast<float>(height)}, runtime.count(), 0.0f, };
     vkCmdPushConstants(commandBuffers[frameIndex], shaderPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
 
     VkBuffer vertexBuffers[] = {vertexBuffer};
@@ -920,7 +921,7 @@ void State::appLogic(){
 void State::renderLoop(){
     std::cout << "[+] Entering RenderLoop" << std::endl;
     while(running){
-        tStart = std::chrono::high_resolution_clock::now();
+        tStart = std::chrono::steady_clock::now();
         appLogic();
 
         vkWaitForFences(logicalDevice, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
@@ -958,9 +959,13 @@ void State::renderLoop(){
         vkQueuePresentKHR(queue, &presentInfo);
         frameIndex = (frameIndex + 1) % swapchainImages.size();
 
-        tEnd = std::chrono::high_resolution_clock::now();
+        tEnd = std::chrono::steady_clock::now();
         std::chrono::duration<float> delta = tEnd - tStart;
         runtime += delta;
+        if(delta < frameTime){
+            std::this_thread::sleep_for(frameTime - delta);
+            runtime+=(frameTime - delta);
+        }
     }
     vkDeviceWaitIdle(logicalDevice);
 };
