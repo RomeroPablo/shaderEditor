@@ -1,30 +1,40 @@
-#include <SDL2/SDL_vulkan.h>
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <numeric>
-#include <pthread.h>
 #include <ratio>
 #include <sstream>
 #include <thread>
 #include <vector>
 
+#if __has_include(<SDL2/SDL.h>)
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_vulkan.h>
+#else
+#include <SDL.h>
 #include <SDL_vulkan.h>
+#endif
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-#include "SDL_events.h"
-#include "SDL_timer.h"
-#include "SDL_video.h"
 #include "helpers.hpp"
 
-#include <sys/stat.h>
+namespace fs = std::filesystem;
+
+static fs::file_time_type getFileTimestamp(const char* path) {
+    std::error_code ec;
+    fs::file_time_type ts = fs::last_write_time(path, ec);
+    if (ec) {
+        return fs::file_time_type::min();
+    }
+    return ts;
+}
 
 struct Vertex{
     float pos[3];
@@ -40,7 +50,7 @@ struct PushConstants{
 struct State{
     const char* shaderFragPath = "../shader.frag";
     const char* shaderVertPath = "../shader.vert";
-    timespec fragTs;
+    fs::file_time_type fragTs{};
     SDL_Window* window;
     uint32_t width = 1920;
     uint32_t height = 1080;
@@ -459,18 +469,16 @@ uint32_t State::findMemoryType(VkMemoryPropertyFlags f, uint32_t typeFilter){
 };
 
 void State::initShaders(){
-    const char* fragPath = "frag.spv";
-    const char* vertPath = "vert.spv";
+    const std::string fragPath = "frag.spv";
+    const std::string vertPath = "vert.spv";
     std::cout << "[+] Creating Kernels" << std::endl;
-    std::string cmd = "glslc " + static_cast<std::string>(shaderFragPath) + " -o " + fragPath;
+    std::string cmd = "glslc \"" + static_cast<std::string>(shaderFragPath) + "\" -o \"" + fragPath + "\"";
 
-    std::system(cmd.data());
-    struct stat st;
-    stat(shaderFragPath, &st);
-    fragTs = st.st_mtim;
+    std::system(cmd.c_str());
+    fragTs = getFileTimestamp(shaderFragPath);
     unsigned char* code;
     size_t codeSize;
-    code = readFile(fragPath, &codeSize);
+    code = readFile(fragPath.c_str(), &codeSize);
     VkShaderModuleCreateInfo sCI = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = NULL,
@@ -480,9 +488,9 @@ void State::initShaders(){
     };
     VK_CHECK(vkCreateShaderModule(logicalDevice, &sCI, NULL, &fragModule));
 
-    cmd =  "glslc " + static_cast<std::string>(shaderVertPath) + " -o " + vertPath;
-    std::system(cmd.data());
-    code = readFile(vertPath, &codeSize);
+    cmd =  "glslc \"" + static_cast<std::string>(shaderVertPath) + "\" -o \"" + vertPath + "\"";
+    std::system(cmd.c_str());
+    code = readFile(vertPath.c_str(), &codeSize);
     sCI = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = NULL,
@@ -879,22 +887,20 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
 }
 
 void State::rebuildFragShader(){
-    const char* fragPath = "frag.spv";
+    const std::string fragPath = "frag.spv";
     std::cout << "[+] Rebuilding Frag ... " << std::endl;
-    std::string cmd = "glslc " + static_cast<std::string>(shaderFragPath) + " -o " + fragPath;
+    std::string cmd = "glslc \"" + static_cast<std::string>(shaderFragPath) + "\" -o \"" + fragPath + "\"";
 
-    uint32_t res = std::system(cmd.data());
+    uint32_t res = std::system(cmd.c_str());
     if(res != 0){
         std::cout << "[!] Failed to build Frag" << std::endl;
         return;
     };
 
-    struct stat st;
-    stat(shaderFragPath, &st);
-    fragTs = st.st_mtim;
+    fragTs = getFileTimestamp(shaderFragPath);
     unsigned char* code;
     size_t codeSize;
-    code = readFile(fragPath, &codeSize);
+    code = readFile(fragPath.c_str(), &codeSize);
     VkShaderModuleCreateInfo sCI = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = NULL,
@@ -909,11 +915,10 @@ void State::rebuildFragShader(){
 
 void State::appLogic(){
     getInput();
-    struct stat st;
-    stat(shaderFragPath, &st);
-    if(st.st_mtim.tv_sec > fragTs.tv_sec){
+    fs::file_time_type shaderTs = getFileTimestamp(shaderFragPath);
+    if(shaderTs != fs::file_time_type::min() && shaderTs > fragTs){
         std::cout << "file has been written" << std::endl;
-        fragTs = st.st_mtim;
+        fragTs = shaderTs;
         rebuildFragShader();
     }
 };
