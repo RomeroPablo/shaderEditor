@@ -413,3 +413,64 @@ void inline printPresentMode(const VkPresentModeKHR p){
       default : std::cout << "\t\tpresentMode : invalid ( 0x" << toHexString( static_cast<uint32_t>( p ) ) << " )" << std::endl; break;
     }
 };
+
+#pragma once
+#include <vector>
+#include <cmath>
+
+struct Vertex {
+    float pos[3];
+    float color[3];
+};
+
+inline std::vector<Vertex> GenerateSphere(
+    float radius,
+    uint32_t stacks,
+    uint32_t slices,
+    float r = 1.0f,
+    float g = 1.0f,
+    float b = 1.0f)
+{
+    std::vector<Vertex> vertices;
+
+    for (uint32_t i = 0; i < stacks; ++i) {
+        float theta0 = M_PI * float(i) / float(stacks);
+        float theta1 = M_PI * float(i + 1) / float(stacks);
+
+        for (uint32_t j = 0; j < slices; ++j) {
+            float phi0 = 2.0f * M_PI * float(j) / float(slices);
+            float phi1 = 2.0f * M_PI * float(j + 1) / float(slices);
+
+            float x00 = radius * std::sin(theta0) * std::cos(phi0);
+            float y00 = radius * std::cos(theta0);
+            float z00 = radius * std::sin(theta0) * std::sin(phi0);
+
+            float x01 = radius * std::sin(theta0) * std::cos(phi1);
+            float y01 = radius * std::cos(theta0);
+            float z01 = radius * std::sin(theta0) * std::sin(phi1);
+
+            float x10 = radius * std::sin(theta1) * std::cos(phi0);
+            float y10 = radius * std::cos(theta1);
+            float z10 = radius * std::sin(theta1) * std::sin(phi0);
+
+            float x11 = radius * std::sin(theta1) * std::cos(phi1);
+            float y11 = radius * std::cos(theta1);
+            float z11 = radius * std::sin(theta1) * std::sin(phi1);
+
+            Vertex v00{{x00,y00,z00},{r,g,b}};
+            Vertex v01{{x01,y01,z01},{r,g,b}};
+            Vertex v10{{x10,y10,z10},{r,g,b}};
+            Vertex v11{{x11,y11,z11},{r,g,b}};
+
+            vertices.push_back(v00);
+            vertices.push_back(v10);
+            vertices.push_back(v11);
+
+            vertices.push_back(v00);
+            vertices.push_back(v11);
+            vertices.push_back(v01);
+        }
+    }
+
+    return vertices;
+}

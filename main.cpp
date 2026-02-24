@@ -42,10 +42,12 @@ static fs::file_time_type getFileTimestamp(const char* path) {
     return ts;
 }
 
+/*
 struct Vertex{
     float pos[3];
     float color[3];
 };
+*/
 
 struct PushConstants{
     float resolution[2];
@@ -58,7 +60,7 @@ struct State{
     const char* shaderVertPath = "kernels/shader.vert";
     fs::file_time_type fragTs{};
     SDL_Window* window;
-    uint32_t width = 640;
+    uint32_t width = 480;
     uint32_t height = 480;
     bool running = true;
     std::chrono::time_point<std::chrono::steady_clock> tStart{}, tEnd{};
@@ -508,6 +510,7 @@ void State::initShaders(){
 
     free(code);
 
+    /*
     vertices = {
         {{ 1.0, 1.0, 0.0},{1.0,1.0,1.0}},
         {{-1.0, 1.0, 0.0},{1.0,1.0,1.0}},
@@ -517,6 +520,8 @@ void State::initShaders(){
         {{-1.0,-1.0, 0.0},{1.0,1.0,1.0}},
         {{ 1.0,-1.0, 0.0},{1.0,1.0,1.0}},
     };
+    */
+    vertices = GenerateSphere(0.5, 32, 32);
 
     vBindingDescription = {
         .binding = 0,
@@ -865,7 +870,7 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
         .pInheritanceInfo = NULL,
     };
     VkClearValue clearColor[2] = {0};
-    clearColor[0].color = (VkClearColorValue){{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearColor[0].color = (VkClearColorValue){{0.05f, 0.15f, 0.20f, 1.0f}};
     clearColor[1].depthStencil = (VkClearDepthStencilValue){1.0f, 0}; 
     VkRenderPassBeginInfo rpBI = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
