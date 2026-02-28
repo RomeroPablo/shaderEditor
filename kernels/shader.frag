@@ -1,70 +1,45 @@
 #version 450
+
 layout(location = 0) out vec4 fragColor;
 
 layout(push_constant) uniform PushConstants {
     vec2  resolution;
-    float time;
+    float u_time;
     float _pad;
 } pc;
 
-// the book of shaders CH10
-//float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); } 
-float hash(vec2 p) {
-    uvec2 n = uvec2(ivec2(floor(p)));
-    n = (n ^ (n.yx >> 1U)) * 1664525U + 1013904223U;
-    uint h = n.x ^ n.y ^ (n.x * 374761393U) ^ (n.y * 668265263U);
-    return float(h & 0x00ffffffu) * (1.0 / 16777216.0);
+const float PI = 3.14159265358979323846;
+
+mat3 rotate3D(float a, vec3 axis) {
+    axis = normalize(axis);
+    float s = sin(a), c = cos(a), oc = 1.0 - c;
+    return mat3(
+        oc*axis.x*axis.x + c,        oc*axis.x*axis.y - axis.z*s, oc*axis.z*axis.x + axis.y*s,
+        oc*axis.x*axis.y + axis.z*s, oc*axis.y*axis.y + c,        oc*axis.y*axis.z - axis.x*s,
+        oc*axis.z*axis.x - axis.y*s, oc*axis.y*axis.z + axis.x*s, oc*axis.z*axis.z + c
+    );
 }
 
-float snoise2D(vec2 p){
-    vec2 i = floor(p);
-    vec2 f = fract(p);
+void main() {
+    vec2 r2 = pc.resolution;
+    float t  = pc.u_time;
 
-    float a = hash(i);
-    float b = hash(i + vec2(1.0,0.0));
-    float c = hash(i + vec2(0.0,1.0));
-    float d = hash(i + vec2(1.0,1.0));
+    vec2 uv = gl_FragCoord.xy;
+    uv.y = r2.y - uv.y;          // vertical flip
 
-    vec2 u = f*f*(3.0-2.0*f);
+    vec3 FC = vec3(uv, r2.x);
+    vec3 rxx_y = vec3(r2.x, r2.x, r2.y);
 
-    return mix(a,b,u.x) +
-           (c-a)*u.y*(1.0-u.x) +
-           (d-b)*u.x*u.y;
-}
-
-void main(){
-    vec2 p = (gl_FragCoord.xy - pc.resolution*0.5) / pc.resolution.y;
-    float st = abs(sin(pc.time));
-
-    mat2 m1 = mat2(1.0,1.0,-1.0,1.0);
-    mat2 m2 = mat2(1.0,-1.0,1.0,1.0);
-    mat2 m3 = mat2(1.0,1.0,1.0,0.0);
-
-    vec2 a = abs(m2*p);
-    vec2 b = abs(m1*p);
-    vec2 c = abs(m3*p);
-
-
-    float d = 0.1/abs(max(a.y,abs(p.y)));
-            //+ 0.1/max(a.x,abs(a.y-0.12)-0.08);
-
-    float n = 0.0;
-    for(int i=0;i<7;i++) {
-        p = -m1*p + pc.time*0.4;
-        n += snoise2D(p);
+    vec4 o = vec4(0.0);
+    for (float i = 0.0, z = 0.0, d = 0.0; i++ < 1e2; ) {
+        vec3 p = z * normalize(FC * 2.0 - rxx_y);
+        p.z += t * PI / 10.0;
+        for (d = 2.0; d < 1024.0; d += d) {
+            p += 0.5 * sin(rotate3D(d * 9.0, vec3(r2.x, r2.y, r2.y)) * (p * d) + t * PI / 10.0) / d;
+        }
+        z += d = (0.005 + 0.4 * abs(0.7 + p.y));
+        o += (cos(p.y / 0.05 - vec4(0.0, 1.0, 2.0, 3.0) * 0.4 - 8.0) + 1.7) / d;
     }
-    n = n * 0.9 + 4.0;
-
-    vec4 o = tanh(vec4(3.0,3.0,3.0,1.0) * d * n * 0.010);
-
-    vec2 noiseUV = gl_FragCoord.xy + vec2(pc.time * 23.0, pc.time * -11.0);
-    vec3 noise = vec3(
-        hash(noiseUV),
-        hash(noiseUV.yx + 19.0),
-        hash(noiseUV + 37.0)
-    ) - 0.5;
-    float grad = max(length(fwidth(o.rgb)), 1.0 / 48.0);
-    o.rgb = clamp(o.rgb + noise * grad, 0.0, 1.0);
-
-    fragColor = vec4(o.rgb, 1.0);
+    o = tanh(o / 1e4);
+    fragColor = o;
 }

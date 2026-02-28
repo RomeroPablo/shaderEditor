@@ -1,10 +1,21 @@
+#include "SDL_keyboard.h"
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <glm/common.hpp>
+#include <glm/detail/qualifier.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <numeric>
 #include <ratio>
@@ -30,6 +41,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include "lib.hpp"
+#include <glm/glm.hpp>
 
 namespace fs = std::filesystem;
 
@@ -42,12 +54,14 @@ static fs::file_time_type getFileTimestamp(const char* path) {
     return ts;
 }
 
-/*
-struct Vertex{
-    float pos[3];
-    float color[3];
+//using vec4 = float[4];
+//using mat4 = vec4[4];
+
+struct alignas(16) MVP {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
 };
-*/
 
 struct PushConstants{
     float resolution[2];
@@ -60,12 +74,12 @@ struct State{
     const char* shaderVertPath = "kernels/shader.vert";
     fs::file_time_type fragTs{};
     SDL_Window* window;
-    uint32_t width = 480;
-    uint32_t height = 480;
+    uint32_t width = 640;
+    uint32_t height = 640;
     bool running = true;
     std::chrono::time_point<std::chrono::steady_clock> tStart{}, tEnd{};
     std::chrono::duration<float> runtime{};
-    std::chrono::duration<float> frameTime{1.0f / 144.0f};
+    std::chrono::duration<float> frameTime{1.0f / 300.0f};
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
@@ -123,6 +137,24 @@ struct State{
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
 
+    VkDescriptorPool descriptorPool;
+    VkDescriptorSetLayout uniformDescriptorSetLayout;
+    std::vector<VkDescriptorSetLayout> uboLayouts;
+    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBufferMemory;
+    std::vector<void*> uniformBufferMapped;
+
+    MVP mvp = {};
+
+    struct {
+       glm::vec3 position = {};
+       glm::vec3 front = {};
+       glm::vec3 up = {};
+       float yaw = 0.0;
+       float pitch = 0.0;
+    } camera;
+
     void initVulkan();
     void setExtensions();
     void setLayers();
@@ -133,10 +165,12 @@ struct State{
     void initDevice();
     void initFramebuffer();
     void initShaders();
+    void initUniforms();
     void buildPipeline(VkShaderModule fragModule);
     void initResources();
     void runRenderPass(uint32_t imgIdx, VkPipeline pipeline);
     void rebuildFragShader();
+    void updateUniforms();
 
     void initSDL();
     void getInput();
@@ -521,7 +555,7 @@ void State::initShaders(){
         {{ 1.0,-1.0, 0.0},{1.0,1.0,1.0}},
     };
     */
-    vertices = GenerateSphere(0.5, 32, 32);
+    vertices = GenerateSphere(1.0, 32, 32);
 
     vBindingDescription = {
         .binding = 0,
@@ -626,12 +660,29 @@ void State::buildPipeline(VkShaderModule fragModule){
         .size = sizeof(PushConstants),
     };
 
+    VkDescriptorSetLayoutBinding binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = 0,
+    };
+
+    VkDescriptorSetLayoutCreateInfo dslCI = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .bindingCount = 1,
+        .pBindings = &binding,
+    };
+    vkCreateDescriptorSetLayout(logicalDevice, &dslCI, NULL, &uniformDescriptorSetLayout);
+
     VkPipelineLayoutCreateInfo plCI = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .setLayoutCount = 0,
-        .pSetLayouts = NULL, 
+        .setLayoutCount = 1,
+        .pSetLayouts = &uniformDescriptorSetLayout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pcR,
     };
@@ -833,6 +884,7 @@ void State::initVulkan(){
     initResources();
     initShaders();
     buildPipeline(fragModule);
+    initUniforms();
 }
 
 void State::initSDL(){
@@ -853,13 +905,148 @@ void State::initSDL(){
 }
 
 void State::getInput(){
-        SDL_Event e;
-        SDL_PollEvent(&e);
-        switch(e.type){
-            case SDL_QUIT : running = false; break;
-            case SDL_KEYDOWN : if(e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false; break;
-            default: break;
-        }
+    SDL_Event e;
+    SDL_PollEvent(&e);
+    switch(e.type){
+        case SDL_QUIT : running = false; break;
+        case SDL_KEYDOWN : {
+                        if(e.key.keysym.scancode == SDL_SCANCODE_ESCAPE)        {running = false;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_W)       {camera.position.x += 1;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_S)       {camera.position.x -= 1;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_A)       {camera.position.y += 1;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_D)       {camera.position.y -= 1;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_SPACE)   {camera.position.z += 1;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_C)       {camera.position.z -= 1;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_LEFT)    {camera.yaw += 2;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_RIGHT)   {camera.yaw -= 2;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_UP)      {camera.pitch += 2;}
+                        else if (e.key.keysym.scancode == SDL_SCANCODE_DOWN)    {camera.pitch -= 2;}
+                        }
+        default: break;
+    }
+    camera.pitch = glm::clamp(camera.pitch, -89.0f, 89.0f);
+}
+
+void State::initUniforms(){
+    std::cout << "[+] Initializing Uniforms" << std::endl;
+    mvp = {
+        {{1.0f, 0.0f, 0.0f, 0.0f}, 
+         {0.0f, 1.0f, 0.0f, 0.0f}, 
+         {0.0f, 0.0f, 1.0f, 0.0f}, 
+         {0.0f, 0.0f, 0.0f, 1.0f}}, 
+
+        {{1.0f, 0.0f, 0.0f, 0.0f}, 
+         {0.0f, 1.0f, 0.0f, 0.0f}, 
+         {0.0f, 0.0f, 1.0f, 0.0f}, 
+         {0.0f, 0.0f, 0.0f, 1.0f}}, 
+
+        {{1.0f, 0.0f, 0.0f, 0.0f}, 
+         {0.0f, 1.0f, 0.0f, 0.0f}, 
+         {0.0f, 0.0f, 1.0f, 0.0f}, 
+         {0.0f, 0.0f, 0.0f, 1.0f}}
+    };
+
+    VkBufferCreateInfo bCI = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .size = sizeof(MVP),
+        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = NULL,
+    };
+    uniformBuffers.resize(swapchainImages.size());
+    uniformBufferMemory.resize(swapchainImages.size());
+    uniformBufferMapped.resize(swapchainImages.size());
+    for(size_t i{0u}; i < uniformBuffers.size(); i++){
+        VkMemoryRequirements uniformMemReqs;
+        vkCreateBuffer(logicalDevice, &bCI, NULL, &uniformBuffers[i]);
+        vkGetBufferMemoryRequirements(logicalDevice, uniformBuffers[i], &uniformMemReqs);
+        VkMemoryAllocateInfo memAI = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = NULL,
+            .allocationSize = uniformMemReqs.size,
+            .memoryTypeIndex = findMemoryType(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+                    uniformMemReqs.memoryTypeBits)
+        };
+        vkAllocateMemory(logicalDevice, &memAI, NULL, &uniformBufferMemory[i]);
+        vkBindBufferMemory(logicalDevice, uniformBuffers[i], uniformBufferMemory[i], 0);
+        vkMapMemory(logicalDevice, uniformBufferMemory[i], 0, sizeof(MVP), 0, &uniformBufferMapped[i]);
+    }
+
+    VkDescriptorPoolSize poolSize = {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = static_cast<uint32_t>(swapchainImages.size()),
+    };
+
+    VkDescriptorPoolCreateInfo poolCI = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .maxSets = static_cast<uint32_t>(swapchainImages.size()),
+        .poolSizeCount = 1,
+        .pPoolSizes = &poolSize,
+    };
+    vkCreateDescriptorPool(logicalDevice, &poolCI, NULL, &descriptorPool);
+
+    std::vector<VkDescriptorSetLayout> layouts(swapchainImages.size(), uniformDescriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptorPool,
+        .descriptorSetCount = static_cast<uint32_t>(swapchainImages.size()),
+        .pSetLayouts = layouts.data()
+    };
+    descriptorSets.resize(swapchainImages.size());
+    vkAllocateDescriptorSets(logicalDevice, &allocInfo, descriptorSets.data());
+
+    for (size_t i = 0; i < swapchainImages.size(); i++) {
+        VkDescriptorBufferInfo bufferInfo = {
+            .buffer = uniformBuffers[i],
+            .offset = 0,
+            .range  = sizeof(MVP),
+        };
+        VkWriteDescriptorSet write = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = NULL,
+            .dstSet = descriptorSets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pImageInfo = NULL,
+            .pBufferInfo = &bufferInfo,
+            .pTexelBufferView = NULL,
+        };
+        vkUpdateDescriptorSets(logicalDevice, 1, &write, 0, NULL);
+    }
+}
+void State::updateUniforms(){
+    mvp.model = glm::mat4(1.0);
+    float angle = glm::radians(90.0f);
+    glm::vec3 axis = {0.0, 0.0, 1.0};
+    mvp.model = glm::rotate(mvp.model, angle, axis);
+
+    camera.front.x = std::cos(glm::radians(camera.pitch)) * std::cos(glm::radians(camera.yaw));
+    camera.front.y = std::sin(glm::radians(camera.yaw)) * std::cos(glm::radians(camera.pitch));
+    camera.front.z = std::sin(glm::radians(camera.pitch));
+    camera.front = glm::normalize(camera.front);
+
+    glm::vec3 worldUp = {0.0, 0.0, 1.0};
+    glm::vec3 right = glm::normalize(glm::cross(camera.front, worldUp));
+    camera.up = glm::cross(right, camera.front);
+
+    glm::vec3 center = camera.position + camera.front;
+    mvp.view = glm::lookAt(camera.position, center, camera.up);
+
+    float fovy = glm::radians(90.0f);
+    float aspect = (float)width / (float)height;
+    float nearZ = 0.001f;
+    float farZ = 100.0f;
+    mvp.proj = glm::perspective(fovy, aspect, nearZ, farZ);
+    mvp.proj[1][1] *= -1;
+
+    memcpy(uniformBufferMapped[frameIndex], &mvp, sizeof(mvp));
 }
 
 void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
@@ -887,11 +1074,14 @@ void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
 
     vkCmdBindPipeline(commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     struct PushConstants pc = { {static_cast<float>(width), static_cast<float>(height)}, runtime.count(), 0.0f, };
-    vkCmdPushConstants(commandBuffers[frameIndex], shaderPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
+    vkCmdPushConstants(commandBuffers[frameIndex], shaderPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 
+            0, sizeof(PushConstants), &pc);
 
     VkBuffer vertexBuffers[] = {vertexBuffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffers[frameIndex], 0, 1, &vertexBuffer, offsets);
+    vkCmdBindDescriptorSets(commandBuffers[frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, shaderPipelineLayout,
+            0, 1, &descriptorSets[frameIndex], 0, NULL);
     vkCmdDraw(commandBuffers[frameIndex], vertices.size(), 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffers[frameIndex]);
@@ -947,6 +1137,7 @@ void State::renderLoop(){
         vkResetFences(logicalDevice, 1, &fences[frameIndex]);
         vkResetCommandBuffer(commandBuffers[frameIndex], 0);
 
+        updateUniforms();
         runRenderPass(imgIdx, shaderPipeline);
 
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -982,9 +1173,11 @@ void State::renderLoop(){
         if(delta < frameTime){
             std::this_thread::sleep_for(frameTime - delta);
             runtime+=(frameTime - delta);
-        }
+            std::cout << 1 / (frameTime - delta).count() << '\r';
+        } else { std::cout << 1 / delta.count() << '\r'; }
     }
     vkDeviceWaitIdle(logicalDevice);
+
 };
 
 int main(){
@@ -996,12 +1189,13 @@ int main(){
 }
 
 void State::exit(){
-    for(size_t i{0uz}; i<swapchainImages.size(); i++){
+    for(size_t i{0u}; i<swapchainImages.size(); i++){
         vkDestroyFramebuffer(logicalDevice, framebuffers[i], NULL);
         vkDestroyImageView(logicalDevice, swapchainImageViews[i], NULL);
         vkDestroyFence(logicalDevice, fences[i], NULL);
         vkDestroySemaphore(logicalDevice, imageAvailableSemaphores[i], NULL);
         vkDestroySemaphore(logicalDevice, renderCompleteSemaphores[i], NULL);
+        vkUnmapMemory(logicalDevice, uniformBufferMemory[i]);
     };
     vkDestroySwapchainKHR(logicalDevice, swapchain, NULL);
     SDL_DestroyWindow(window);
