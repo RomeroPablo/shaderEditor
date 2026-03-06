@@ -80,6 +80,7 @@ struct State{
     std::chrono::time_point<std::chrono::steady_clock> tStart{}, tEnd{};
     std::chrono::duration<float> runtime{};
     std::chrono::duration<float> frameTime{1.0f / 300.0f};
+    float dt;
 
     std::vector<const char*> sdlExtensions{};
     std::vector<const char*> layers{};
@@ -155,6 +156,16 @@ struct State{
        float pitch = 0.0;
     } camera;
 
+    struct {
+        bool in{};
+        bool out{};
+        bool left{};
+        bool right{};
+        bool up{};
+        bool down{};
+    } move;
+
+    bool enable_input = true;
     void initVulkan();
     void setExtensions();
     void setLayers();
@@ -544,7 +555,6 @@ void State::initShaders(){
 
     free(code);
 
-    /*
     vertices = {
         {{ 1.0, 1.0, 0.0},{1.0,1.0,1.0}},
         {{-1.0, 1.0, 0.0},{1.0,1.0,1.0}},
@@ -554,8 +564,9 @@ void State::initShaders(){
         {{-1.0,-1.0, 0.0},{1.0,1.0,1.0}},
         {{ 1.0,-1.0, 0.0},{1.0,1.0,1.0}},
     };
-    */
-    vertices = GenerateSphere(1.0, 32, 32);
+    if(enable_input){
+        vertices = GenerateSphere(1.0, 32, 32);
+    }
 
     vBindingDescription = {
         .binding = 0,
@@ -906,25 +917,71 @@ void State::initSDL(){
 
 void State::getInput(){
     SDL_Event e;
-    SDL_PollEvent(&e);
-    switch(e.type){
-        case SDL_QUIT : running = false; break;
-        case SDL_KEYDOWN : {
-                        if(e.key.keysym.scancode == SDL_SCANCODE_ESCAPE)        {running = false;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_W)       {camera.position.x += 1;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_S)       {camera.position.x -= 1;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_A)       {camera.position.y += 1;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_D)       {camera.position.y -= 1;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_SPACE)   {camera.position.z += 1;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_C)       {camera.position.z -= 1;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_LEFT)    {camera.yaw += 2;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_RIGHT)   {camera.yaw -= 2;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_UP)      {camera.pitch += 2;}
-                        else if (e.key.keysym.scancode == SDL_SCANCODE_DOWN)    {camera.pitch -= 2;}
-                        }
-        default: break;
-    }
+    while(SDL_PollEvent(&e));
+    const uint8_t* keys = SDL_GetKeyboardState(nullptr);
+    if(keys[SDL_SCANCODE_ESCAPE])   {running = false;}
+    if(enable_input){
+    if(keys[SDL_SCANCODE_W])        {move.in = true;}
+    if(keys[SDL_SCANCODE_S])        {move.out = true;}
+    if(keys[SDL_SCANCODE_A])        {move.left = true;}
+    if(keys[SDL_SCANCODE_D])        {move.right = true;}
+    if(keys[SDL_SCANCODE_SPACE])    {move.up = true;}
+    if(keys[SDL_SCANCODE_LCTRL])    {move.down = true;}
+
+    int dx, dy;
+    SDL_GetRelativeMouseState(&dx, &dy);
+    camera.yaw   -= dx * 0.3;
+    camera.pitch -= dy * 0.3;
+
     camera.pitch = glm::clamp(camera.pitch, -89.0f, 89.0f);
+
+    camera.front.x = std::cos(glm::radians(camera.pitch)) * std::cos(glm::radians(camera.yaw));
+    camera.front.y = std::cos(glm::radians(camera.pitch)) * std::sin(glm::radians(camera.yaw));
+    camera.front.z = std::sin(glm::radians(camera.pitch));
+    camera.front = glm::normalize(camera.front);
+
+    glm::vec3 worldUp = {0.0f, 0.0f, 1.0f};
+    glm::vec3 right = glm::cross(camera.front, worldUp);
+    camera.up = glm::cross(right, camera.front);
+
+    float velocity = 8.0f * dt;
+    glm::vec3 planarFront = {};
+
+    planarFront = worldUp * glm::dot(camera.front, worldUp);
+    planarFront = camera.front - planarFront;
+    if(planarFront.length() > 0.0f){
+        planarFront = glm::normalize(planarFront);
+    } else {
+        planarFront = camera.front;
+    }
+
+    if(move.in){
+        camera.position = camera.position + (planarFront * velocity); 
+        move.in = false;
+    }
+    if(move.out){
+        camera.position = camera.position + (planarFront * (-1 * velocity));
+        move.out = false;
+    }
+
+    if(move.left){
+        camera.position = camera.position + (right * (-1 * velocity));
+        move.left = false;
+    }
+    if(move.right){
+        camera.position = camera.position + (right * (velocity));
+        move.right = false;
+    }
+
+    if(move.up){
+        camera.position[2] += velocity;
+        move.up = false;
+    }
+    if(move.down){
+        camera.position[2] -= velocity;
+        move.down = false;
+    }
+    }
 }
 
 void State::initUniforms(){
@@ -1021,16 +1078,37 @@ void State::initUniforms(){
         vkUpdateDescriptorSets(logicalDevice, 1, &write, 0, NULL);
     }
 }
+
+static void printMat4(const glm::mat4& m)
+{
+    for (int r = 0; r < 4; ++r) {
+        std::cout << "[ ";
+        for (int c = 0; c < 4; ++c) {
+            std::cout << m[c][r];
+            if (c < 3) std::cout << ", ";
+        }
+        std::cout << " ]\n";
+    }
+}
+
+void printMVP(const MVP& mvp)
+{
+    std::cout << "Model:\n";
+    printMat4(mvp.model);
+
+    std::cout << "\nView:\n";
+    printMat4(mvp.view);
+
+    std::cout << "\nProjection:\n";
+    printMat4(mvp.proj);
+}
+
 void State::updateUniforms(){
+    if(enable_input){
     mvp.model = glm::mat4(1.0);
     float angle = glm::radians(90.0f);
     glm::vec3 axis = {0.0, 0.0, 1.0};
     mvp.model = glm::rotate(mvp.model, angle, axis);
-
-    camera.front.x = std::cos(glm::radians(camera.pitch)) * std::cos(glm::radians(camera.yaw));
-    camera.front.y = std::sin(glm::radians(camera.yaw)) * std::cos(glm::radians(camera.pitch));
-    camera.front.z = std::sin(glm::radians(camera.pitch));
-    camera.front = glm::normalize(camera.front);
 
     glm::vec3 worldUp = {0.0, 0.0, 1.0};
     glm::vec3 right = glm::normalize(glm::cross(camera.front, worldUp));
@@ -1045,8 +1123,13 @@ void State::updateUniforms(){
     float farZ = 100.0f;
     mvp.proj = glm::perspective(fovy, aspect, nearZ, farZ);
     mvp.proj[1][1] *= -1;
-
+    } else {
+    mvp.model = glm::mat4(1.0);
+    mvp.view  = glm::mat4(1.0);
+    mvp.proj  = glm::mat4(1.0);
+    }
     memcpy(uniformBufferMapped[frameIndex], &mvp, sizeof(mvp));
+    //printMVP(mvp);
 }
 
 void State::runRenderPass(uint32_t imgIdx, VkPipeline pipeline){
@@ -1127,6 +1210,7 @@ void State::appLogic(){
 
 void State::renderLoop(){
     std::cout << "[+] Entering RenderLoop" << std::endl;
+    SDL_SetRelativeMouseMode(SDL_TRUE);
     while(running){
         tStart = std::chrono::steady_clock::now();
         appLogic();
@@ -1173,8 +1257,9 @@ void State::renderLoop(){
         if(delta < frameTime){
             std::this_thread::sleep_for(frameTime - delta);
             runtime+=(frameTime - delta);
+            dt = frameTime.count();
             std::cout << 1 / (frameTime - delta).count() << '\r';
-        } else { std::cout << 1 / delta.count() << '\r'; }
+        } else { dt = delta.count(); std::cout << 1 / delta.count() << '\r'; }
     }
     vkDeviceWaitIdle(logicalDevice);
 
